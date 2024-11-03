@@ -1,0 +1,139 @@
+---
+title: "Evaluating Prophet's effectiveness in Modelling temperatures for different regions"
+author: "Tejas Bantupalli"
+date: "2024-11-02"
+output: html_document
+---
+
+## Introduction
+
+This project involves forecasting the mean temperature of two locations: Ang Mo Kio in Singapore and Finland. We utilize the Prophet library to create predictive models based on historical weather data. We want to see how well Prophet works in different scenarios, and how well it can predict temperature values.
+
+## Libraries
+
+```{r load-libraries}
+# Load necessary libraries
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(prophet)
+```
+
+# Singapore Weather Data
+
+```{r message = FALSE, warning=FALSE}
+# Read Singapore data
+weather_data <- read.csv("angmokio.csv")
+names(weather_data)[names(weather_data) == "Mean.Temperature...C."] <- "Mean_Temperature"
+weather_data$Date <- as.Date(with(weather_data, paste(Year, Month, Day, sep = "-")), "%Y-%m-%d")
+```
+
+# Finland Weather Data
+
+```{r message = FALSE, warning=FALSE}
+# Read Finland data
+finland_weather_data <- read.csv("Finland.csv")
+# Ensure the date column is correctly formatted (mm/dd/yyyy)
+finland_weather_data$date <- as.Date(finland_weather_data$date, format = "%m/%d/%Y")
+```
+
+## Prepare data for Prophet
+
+```{r message = FALSE, warning=FALSE}
+singapore_prophet <- weather_data %>%
+  select(Date, Mean_Temperature) %>%
+  rename(ds = Date, y = Mean_Temperature)
+
+# Filter out NA values
+singapore_prophet <- singapore_prophet %>% filter(!is.na(y))
+finland_prophet <- finland_weather_data %>%
+  select(date, tavg) %>%
+  rename(ds = date, y = tavg)
+
+# Filter out NA values
+finland_prophet <- finland_prophet %>% filter(!is.na(y))
+finland_prophet$ds <- as.Date(finland_prophet$ds)
+
+```
+
+# Raw data for Singapore
+
+```{r message = FALSE, warnign = FALSE}
+ggplot(singapore_prophet, aes(x = ds, y = y)) +
+  geom_line(color = "blue") +
+  labs(title = "Raw Mean Temperature in Ang Mo Kio, Singapore",
+       x = "Date", y = "Mean Temperature (°C)") +
+  theme_minimal()
+
+```
+
+# Raw data for Finland
+
+```{r message = FALSE, warnign = FALSE}
+ggplot(finland_prophet, aes(x = ds, y = y)) +
+  geom_line(color = "red") +
+  labs(title = "Raw Mean Temperature in Finland",
+       x = "Date", y = "Mean Temperature (°C)") +
+  theme_minimal()
+
+```
+
+## What we can draw from raw data:
+We can see here that we have the temperatures of two different countries in two different regions plotted over the span of several years. From this, we can easily see that Finland has a more seasonal variation, with ranges of around 45 degrees Celsius a year. However, this range for Singapore is only just 2 degrees, therefore it is more consistent throughout the year. Therefore, we can see that both graphs have a recurring shape, except the shape for norway is more elongated, implying larger ranges as described above. What I am about to do, is not only predict the temperatures of these two countries over the next year, but also evaluate the accuracies' of the two graphs. My guess is that prophet may struggle more with finland, due to the large ranges, making the time series less consistent and therefore tougher to track.
+
+# Fit Prophet models
+
+```{r message = FALSE, warning=FALSE}
+singapore_model <- prophet(singapore_prophet,daily.seasonality = TRUE)
+finland_model <- prophet(finland_prophet, daily.seasonality = TRUE)  # Enable daily seasonality
+```
+
+# Create future data frames for predictions
+
+```{r message = FALSE, warning=FALSE}
+future_singapore <- make_future_dataframe(singapore_model, periods = 365)
+future_finland <- make_future_dataframe(finland_model, periods = 365)
+```
+
+# Make predictions
+
+```{r message = FALSE, warning=FALSE}
+forecast_singapore <- predict(singapore_model, future_singapore)
+forecast_finland <- predict(finland_model, future_finland)
+```
+
+# Plot the forecasts for Singapore
+
+```{r message = FALSE, warning=FALSE}
+ggplot(forecast_singapore, aes(x = ds, y = yhat)) +
+  geom_line(color = "blue") +
+  geom_ribbon(aes(ymin = yhat_lower, ymax = yhat_upper), alpha = 0.2) +
+  labs(title = "Forecast of Mean Temperature in Ang Mo Kio, Singapore",
+       x = "Date", y = "Mean Temperature (°C)") +
+  theme_minimal()
+```
+
+# Plot the forecasts for Finland
+
+```{r message = FALSE, warning=FALSE}
+ggplot(forecast_finland, aes(x = ds, y = yhat)) +
+  geom_line(color = "red") +
+  geom_ribbon(aes(ymin = yhat_lower, ymax = yhat_upper), alpha = 0.2) +
+  labs(title = "Forecast of Mean Temperature in Finland",
+       x = "Date", y = "Mean Temperature (°C)") +
+  theme_minimal()
+```
+
+## Model Evaluation
+
+```{r message = FALSE, warning=FALSE}
+# Evaluate the model using Mean Absolute Error (MAE)
+mae_singapore <- mean(abs(singapore_prophet$y - forecast_singapore$yhat[1:nrow(singapore_prophet)]))
+mae_finland <- mean(abs(finland_prophet$y - forecast_finland$yhat[1:nrow(finland_prophet)]))
+
+cat("MAE for Singapore:", mae_singapore, "\n")
+cat("MAE for Finland:", mae_finland, "\n")
+```
+
+## Conclusion
+If we look at just the graphs, we can see that prophet has done a good job of tracing the temperatures for the next year, as it had drawn a curve consistent to the yearly- curves before it, thus taking into account seasonal changes. This is due to the seasoning option being enabled. Therefore it shows that prophet is quite effective when calculating future temperatures. However, the forecasting models demonstrated varying accuracy levels, with Singapore showing a lower Mean Absolute Error (MAE) due to its stable tropical climate compared to Finland's more variable temperatures. This proves that my original hypothesis was right, and that prophet may struggle with more dynamic graphs. The results suggest that while the Prophet model can be effective for both regions, it may need further tuning for locations with greater temperature fluctuations.
